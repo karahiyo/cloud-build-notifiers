@@ -30,6 +30,8 @@ spec:
         Build.Status.EXPIRED
       ]
     template:
+      type: golang
+      uri: gs://project-name/githubdeployments.json
     delivery:
       githubToken:
         secretRef: github-token
