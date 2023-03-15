@@ -1,6 +1,7 @@
 FROM golang:1.20 AS build-env
 COPY . /go-src/
-WORKDIR /go-src/
+WORKDIR /go-src/githubdeployments
+RUN go test /go-src/githubdeployments
 RUN go build -o /go-app .
 
 # From the Cloud Run docs:
