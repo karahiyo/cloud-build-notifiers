@@ -15,11 +15,17 @@
 steps:
 - # Build the binary and put it into the builder image.
   name: gcr.io/cloud-builders/docker
-  args: ['build', '--tag=$LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-build-notifiers/githubdeployments', '.']
+  args: 
+  - build
+  - --tag=${_REGISTRY}/githubdeployments
+  - --file=./githubdeployments/Dockerfile
+  - '.'
 
-- # Push the container image to Container Registry
+- # Push the container image to repository
   name: gcr.io/cloud-builders/docker
-  args: ['push', '$LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-build-notifiers/githubdeployments']
+  args:
+  - push
+  - ${_REGISTRY}/githubdeployments
 
 - # Deploy to Cloud Run
   name: google/cloud-sdk
@@ -29,11 +35,18 @@ steps:
     - deploy
     - cloud-build-notifiers-githubdeployments
     - --platform=managed
-    - --region=$LOCATION
-    - --image=$LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-build-notifiers/githubdeployments
+    - --region=${_REGION}
+    - --image=${_REGISTRY}/githubdeployments
     - --no-allow-unauthenticated
     - --update-env-vars=CONFIG_PATH=${_CONFIG_PATH}
 
 # Push the image with tags.
 images:
-- $LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-build-notifiers/githubdeployments 
+- ${_REGISTRY}/githubdeployments 
+
+options:
+  dynamic_substitutions: true
+
+substitutions:
+  _REGION: us-west1
+  _REGISTRY: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-build-notifiers"
