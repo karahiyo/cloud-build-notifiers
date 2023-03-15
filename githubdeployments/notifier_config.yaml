@@ -1,0 +1,17 @@
+apiVersion: cloud-build-notifiers/v1
+kind: YourNotifier
+metadata:
+  name: github-deployments-notifier
+spec:
+  notification:
+    filter: >-
+      "deployment" in build.tags && 
+      build.status in [
+        Build.Status.PENDING, 
+        Build.Status.SUCCESS, 
+        Build.Status.FAILURE, 
+        Build.Status.INTERNAL_ERROR, 
+        Build.Status.TIMEOUT, 
+        Build.Status.CANCELLED, 
+        Build.Status.EXPIRED
+      ]
