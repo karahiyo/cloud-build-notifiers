@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"strings"
+	"text/template"
 
 	cloudbuild "cloud.google.com/go/cloudbuild/apiv1"
 	"cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
@@ -41,33 +41,34 @@ type githubdeploymentsNotifier struct {
 }
 
 const deploymentPayload = `{
+ 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
     "ref": "{{.Build.Substitutions.RefName}}",
+    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
     "payload": "{}",
 	"task": "",
-    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
- 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
 }`
 
 const deploymentStatusPayload = `{
+ 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
     "state": "{{.Params.Status}}",
     "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
 	"log_url": "{{.Build.LogUrl}}",
- 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
 	"environment_url": "{{.Build.Substitutions._ENVIRONMENT_URL}}"
 }`
 
 type githubdeploymentsInitMessage struct {
 	Environment string `json:"environment"`
 	Ref         string `json:"ref"`
-	Payload     string `json:"payload"`
 	Description string `json:"description"`
+	Payload     string `json:"payload"`
+	Task        string `json:"task"`
 }
 
 type githubdeploymentsUpdateMessage struct {
-	State          string `json:"state"`
-	LogUrl         string `json:"log_url"`
-	Description    string `json:"description"`
 	Environment    string `json:"environment"`
+	State          string `json:"state"`
+	Description    string `json:"description"`
+	LogUrl         string `json:"log_url"`
 	EnvironmentUrl string `json:"environment_url"`
 }
 
