@@ -21,7 +21,8 @@ spec:
     filter: >-
       "deployment" in build.tags && 
       build.status in [
-        Build.Status.PENDING, 
+        Build.Status.QUEUED, 
+        Build.Status.WORKING,
         Build.Status.SUCCESS, 
         Build.Status.FAILURE, 
         Build.Status.INTERNAL_ERROR, 

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -12,7 +11,7 @@ import (
 	"strings"
 
 	cloudbuild "cloud.google.com/go/cloudbuild/apiv1"
-	cloudbuildpb "cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
+	"cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
 	"github.com/GoogleCloudPlatform/cloud-build-notifiers/lib/notifiers"
 	log "github.com/golang/glog"
 	// deprecated "google.golang.org/genproto/googleapis/devtools/cloudbuild/v1"
@@ -49,7 +48,7 @@ const deploymentPayload = `{
 }`
 
 const deploymentStatusPayload = `{
-    "state": "{{.Build.Status}}",
+    "state": "{{.Params.Status}}",
     "target_url": "{{.Build.TargetUrl}}",
     "description": "{{.Build.Description}}",
 	"log_url": "{{.Build.LogUrl}}",
@@ -149,6 +148,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 
 	var webhookURL string
 	var tmpl *template.Template
+	deploymentStatus := toGitHubDeploymentStatus(build.Status)
 
 	if build.Status == cloudbuildpb.Build_PENDING {
 		webhookURL = fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
@@ -168,6 +168,8 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	if err != nil {
 		log.Errorf("failed to resolve bindings: %v", err)
 	}
+	bindings["State"] = deploymentStatus
+
 	g.tmplView = &notifiers.TemplateView{
 		Build:  &notifiers.BuildView{Build: build},
 		Params: bindings,
@@ -214,6 +216,9 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, repo, sha string) (int, error) {
 	webhookURL := fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, webhookURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to make request: url=%q, %w", webhookURL, err)
+	}
 	q := req.URL.Query()
 	q.Add("sha", sha)
 	req.URL.RawQuery = q.Encode()
@@ -230,7 +235,7 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 
 	if resp.StatusCode != http.StatusOK {
 		log.Warningf("got a non-OK response status %q (%d) from %q", resp.Status, resp.StatusCode, webhookURL)
-		return 0, errors.New(fmt.Sprintf("failed to call list deployments api: response status=%q, url=%q", resp.Status, webhookURL))
+		return 0, fmt.Errorf("failed to call list deployments api: response status=%q, url=%q", resp.Status, webhookURL)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -258,4 +263,24 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 	}
 
 	return deploymentID, nil
+}
+
+func toGitHubDeploymentStatus(status cloudbuildpb.Build_Status) string {
+	stateMap := map[cloudbuildpb.Build_Status]string{
+		cloudbuildpb.Build_PENDING:        "pending",
+		cloudbuildpb.Build_WORKING:        "in_progress",
+		cloudbuildpb.Build_SUCCESS:        "success",
+		cloudbuildpb.Build_FAILURE:        "failure",
+		cloudbuildpb.Build_TIMEOUT:        "error",
+		cloudbuildpb.Build_INTERNAL_ERROR: "error",
+		cloudbuildpb.Build_CANCELLED:      "error",
+		cloudbuildpb.Build_EXPIRED:        "error",
+	}
+
+	deploymentStatus, ok := stateMap[status]
+	if !ok {
+		return ""
+	}
+
+	return deploymentStatus
 }
