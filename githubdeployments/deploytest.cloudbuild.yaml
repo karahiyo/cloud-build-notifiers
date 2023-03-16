@@ -14,4 +14,14 @@
 
 steps:
 - name: busybox
-  args: ['true']
+  entrypoint: sh
+  args: 
+  - '-c'
+  - |
+    echo "deploy scripts here..."
+
+tags: ['deployment']
+
+substitution:
+  _ENVIRONMENT: "test"
+  _ENVIRONMENT_URL: "https://some.example.com"
