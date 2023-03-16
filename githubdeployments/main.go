@@ -49,7 +49,6 @@ const deploymentPayload = `{
 
 const deploymentStatusPayload = `{
     "state": "{{.Params.Status}}",
-    "target_url": "{{.Build.TargetUrl}}",
     "description": "{{.Build.Description}}",
 	"log_url": "{{.Build.LogUrl}}",
 	"environment_url": "{{.Build.Substitutions._ENVIRONMENT_URL}}"
@@ -64,7 +63,6 @@ type githubdeploymentsInitMessage struct {
 
 type githubdeploymentsUpdateMessage struct {
 	State          string `json:"state"`
-	TargetUrl      string `json:"target_url"`
 	LogUrl         string `json:"log_url"`
 	Description    string `json:"description"`
 	Environment    string `json:"environment"`
