@@ -30,7 +30,6 @@ func main() {
 type githubdeploymentsNotifier struct {
 	filter           notifiers.EventFilter
 	githubToken      string
-	bindingResolver  notifiers.BindingResolver
 	cloudbuildClient *cloudbuild.Client
 }
 
@@ -51,13 +50,12 @@ type createDeploymentStatusMessage struct {
 	EnvironmentUrl string `json:"environment_url,omitempty"`
 }
 
-func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, _ string, sg notifiers.SecretGetter, br notifiers.BindingResolver) error {
+func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, _ string, sg notifiers.SecretGetter, _ notifiers.BindingResolver) error {
 	prd, err := notifiers.MakeCELPredicate(cfg.Spec.Notification.Filter)
 	if err != nil {
 		return fmt.Errorf("failed to make a CEL predicate: %w", err)
 	}
 	g.filter = prd
-	g.bindingResolver = br
 
 	cloudbuildClient, err := cloudbuild.NewClient(ctx)
 	if err != nil {
@@ -83,7 +81,7 @@ func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Co
 }
 
 func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build *cloudbuildpb.Build) error {
-	log.V(1).Infof("[DEBUG] at SendNotification: build=%+v", build)
+	log.V(1).Infof("[DEBUG] at SendNotification: %+v", build)
 
 	if !g.filter.Apply(ctx, build) {
 		log.V(2).Infof("not sending response for event (build id = %s, status = %v)", build.Id, build.Status)
@@ -147,6 +145,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	}
 
 	log.Infof("sending GitHub Deployment webhook for Build %q (status: %q) to url %q", build.Id, build.Status, webhookURL)
+	log.V(1).Infof("payload: %q", payload)
 
 	logURL, err := notifiers.AddUTMParams(build.LogUrl, notifiers.HTTPMedium)
 	if err != nil {
@@ -159,8 +158,9 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 		return fmt.Errorf("failed to create a new HTTP request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Authorization", fmt.Sprintf("token %s", g.githubToken))
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", g.githubToken))
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "GCB-Notifier/0.1 (http)")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -170,15 +170,12 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		b, err := httputil.DumpResponse(resp, true)
-		if err != nil {
-			return fmt.Errorf("failed to dump http response")
-		}
+		b, _ := httputil.DumpResponse(resp, true)
 		log.Warningf("got a non-OK response status %q (%d) from %q. response = %q", resp.Status, resp.StatusCode, webhookURL, string(b))
 		return fmt.Errorf("failed to api request: %q", string(b))
 	}
 
-	log.V(2).Infoln("send HTTP request successfully")
+	log.V(1).Infoln("send HTTP request successfully")
 	return nil
 }
 
@@ -193,8 +190,9 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 	q.Add("environment", environment)
 	req.URL.RawQuery = q.Encode()
 
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", fmt.Sprintf("token %s", g.githubToken))
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "GCB-Notifier/0.1 (http)")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -213,7 +211,7 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 		return 0, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	log.Infof("matched deployments: %+v", string(respBody))
+	log.V(2).Infof("list deployments response: %+v", string(respBody))
 
 	type Deployment struct {
 		ID int `json:"id"`
@@ -240,6 +238,7 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 
 func toGitHubDeploymentStatus(status cloudbuildpb.Build_Status) string {
 	stateMap := map[cloudbuildpb.Build_Status]string{
+		cloudbuildpb.Build_QUEUED:         "queued",
 		cloudbuildpb.Build_PENDING:        "pending",
 		cloudbuildpb.Build_WORKING:        "in_progress",
 		cloudbuildpb.Build_SUCCESS:        "success",
