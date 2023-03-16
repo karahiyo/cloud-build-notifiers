@@ -35,20 +35,20 @@ type githubdeploymentsNotifier struct {
 }
 
 type createDeploymentMessage struct {
-	Environment      string   `json:"environment"`
+	Environment      string   `json:"environment,omitempty"`
 	Ref              string   `json:"ref"`
-	Description      string   `json:"description"`
-	Payload          string   `json:"payload"`
-	Task             string   `json:"task"`
+	Description      string   `json:"description,omitempty"`
+	Payload          string   `json:"payload,omitempty"`
+	Task             string   `json:"task,omitempty"`
 	RequiredContexts []string `json:"required_contexts"`
 }
 
 type createDeploymentStatusMessage struct {
 	Environment    string `json:"environment"`
 	State          string `json:"state"`
-	Description    string `json:"description"`
-	LogUrl         string `json:"log_url"`
-	EnvironmentUrl string `json:"environment_url"`
+	Description    string `json:"description,omitempty"`
+	LogUrl         string `json:"log_url,omitempty"`
+	EnvironmentUrl string `json:"environment_url,omitempty"`
 }
 
 func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, _ string, sg notifiers.SecretGetter, br notifiers.BindingResolver) error {
@@ -169,7 +169,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		b, err := httputil.DumpResponse(resp, true)
 		if err != nil {
 			return fmt.Errorf("failed to dump http response")
