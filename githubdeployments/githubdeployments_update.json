@@ -1,0 +1,7 @@
+{
+    "state": "{{.Build.State}}",
+    "target_url": "{{.Build.TargetUrl}}",
+    "log_url": "{{.Build.LogUrl}}",
+    "description": "{{.Build.Description}}",
+    "environment_url": "{{.Build.EnvironmentUrl}}"
+}

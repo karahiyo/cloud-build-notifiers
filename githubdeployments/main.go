@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"strings"
 
+	cloudbuild "cloud.google.com/go/cloudbuild/apiv1"
+	cloudbuildpb "cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
 	"github.com/GoogleCloudPlatform/cloud-build-notifiers/lib/notifiers"
 	log "github.com/golang/glog"
-	cbpb "google.golang.org/genproto/googleapis/devtools/cloudbuild/v1"
+	// deprecated "google.golang.org/genproto/googleapis/devtools/cloudbuild/v1"
 )
 
 const (
@@ -27,21 +29,48 @@ func main() {
 
 type githubdeploymentsNotifier struct {
 	filter      notifiers.EventFilter
-	tmpl        *template.Template
 	githubToken string
-	githubRepo  string
+	createTmpl  *template.Template
+	updateTmpl  *template.Template
 
 	br       notifiers.BindingResolver
 	tmplView *notifiers.TemplateView
+
+	cloudbuildClient *cloudbuild.Client
 }
 
-type githubdeploymentsMessage struct {
-	Env    string `json:"env"`
-	EnvUrl string `json:"env_url"`
-	LogUrl string `json:"log_url"`
+const createDeploymentTemplateBody = `{
+    "ref": "{{.Build.RefName}}",
+    "environment": "{{.Build.Environment}}",
+    "payload": "{}",
+    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
+}`
+
+const updateDeploymentTemplateBody = `{
+    "state": "{{.Build.State}}",
+    "target_url": "{{.Build.TargetUrl}}",
+    "log_url": "{{.Build.LogUrl}}",
+    "description": "{{.Build.Description}}",
+    "environment_url": "{{.Build.EnvironmentUrl}}"
+}`
+
+type githubdeploymentsInitMessage struct {
+	Environment string `json:"environment"`
+	Ref         string `json:"ref"`
+	Payload     string `json:"payload"`
+	Description string `json:"description"`
 }
 
-func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, deploymentsTemplate string, sg notifiers.SecretGetter, br notifiers.BindingResolver) error {
+type githubdeploymentsUpdateMessage struct {
+	State          string `json:"state"`
+	TargetUrl      string `json:"target_url"`
+	LogUrl         string `json:"log_url"`
+	Description    string `json:"description"`
+	Environment    string `json:"environment"`
+	EnvironmentUrl string `json:"environment_url"`
+}
+
+func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Config, _ string, sg notifiers.SecretGetter, br notifiers.BindingResolver) error {
 	prd, err := notifiers.MakeCELPredicate(cfg.Spec.Notification.Filter)
 	if err != nil {
 		return fmt.Errorf("failed to make a CEL predicate: %w", err)
@@ -49,17 +78,23 @@ func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Co
 	g.filter = prd
 	g.br = br
 
-	repo, ok := cfg.Spec.Notification.Delivery["githubRepo"].(string)
-	if !ok {
-		return fmt.Errorf("expected delivery config %v to have string field `githubRepo`", cfg.Spec.Notification.Delivery)
+	cloudbuildClient, err := cloudbuild.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Cloud Build client: %w", err)
 	}
-	g.githubRepo = repo
+	g.cloudbuildClient = cloudbuildClient
 
-	tmpl, err := template.New("deployments_template").Parse(deploymentsTemplate)
+	createTmpl, err := template.New("create_template").Parse(createDeploymentTemplateBody)
 	if err != nil {
 		return fmt.Errorf("failed to parse deployment body template: %w", err)
 	}
-	g.tmpl = tmpl
+	g.createTmpl = createTmpl
+
+	updateTmpl, err := template.New("update_template").Parse(updateDeploymentTemplateBody)
+	if err != nil {
+		return fmt.Errorf("failed to parse deployment body template: %w", err)
+	}
+	g.updateTmpl = updateTmpl
 
 	wuRef, err := notifiers.GetSecretRef(cfg.Spec.Notification.Delivery, githubTokenSecretName)
 	if err != nil {
@@ -78,13 +113,39 @@ func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Co
 	return nil
 }
 
-func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build *cbpb.Build) error {
+func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build *cloudbuildpb.Build) error {
 	if !g.filter.Apply(ctx, build) {
 		log.V(2).Infof("not sending response for event (build id = %s, status = %v)", build.Id, build.Status)
 		return nil
 	}
 
-	webhookURL := fmt.Sprintf("%s/%s/deployments", githubApiEndpoint, g.githubRepo)
+	getTriggerReq := &cloudbuildpb.GetBuildTriggerRequest{
+		ProjectId: build.GetProjectId(),
+		TriggerId: build.GetBuildTriggerId(),
+	}
+	triggerInfo, err := g.cloudbuildClient.GetBuildTrigger(ctx, getTriggerReq)
+	if err != nil {
+		return fmt.Errorf("failed to get Build Trigger info: %w", err)
+	}
+	if triggerInfo.GetGithub() == nil {
+		log.V(2).Infof("Skipped due to build trigger without github connection settings")
+		log.V(2).Infof("not sending response for event (build id = %s, status = %v)", build.Id, build.Status)
+		return nil
+	}
+
+	owner := triggerInfo.GetGithub().GetOwner()
+	repo := triggerInfo.GetGithub().GetName()
+
+	if build.Status == cloudbuildpb.Build_PENDING {
+		return g.sendCreateNotification(ctx, build, owner, repo)
+	} else {
+		return g.sendUpdateNotification(ctx, build, owner, repo)
+	}
+}
+
+func (g *githubdeploymentsNotifier) sendCreateNotification(ctx context.Context, build *cloudbuildpb.Build, owner string, repo string) error {
+	log.Infof("build: %+v", build)
+	webhookURL := fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
 
 	log.Infof("sending GitHub Deployment webhook for Build %q (status: %q) to url %q", build.Id, build.Status, webhookURL)
 
@@ -104,7 +165,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 
 	payload := new(bytes.Buffer)
 	var buf bytes.Buffer
-	if err := g.tmpl.Execute(&buf, g.tmplView); err != nil {
+	if err := g.createTmpl.Execute(&buf, g.tmplView); err != nil {
 		return err
 	}
 	err = json.NewEncoder(payload).Encode(buf)
@@ -132,5 +193,13 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	}
 
 	log.V(2).Infoln("send HTTP request successfully")
+	return nil
+}
+
+func (g *githubdeploymentsNotifier) sendUpdateNotification(ctx context.Context, build *cloudbuildpb.Build, owner string, repo string) error {
+	log.Infof("build: %+v", build)
+	webhookURL := fmt.Sprintf("%s/%s/%s/deployments/%s", githubApiEndpoint, owner, repo, "deployment-id-here")
+	log.Infof("sending GitHub Deployment webhook for Build %q (status: %q) to url %q", build.Id, build.Status, webhookURL)
+	// TODO
 	return nil
 }

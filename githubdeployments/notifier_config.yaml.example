@@ -31,11 +31,10 @@ spec:
       ]
     template:
       type: golang
-      uri: gs://project-name/githubdeployments.json
+      uri: gs://project-name/githubdeployments/init.json
     delivery:
       githubToken:
         secretRef: github-token
-      githubRepo: owner/repo
 
   secrets:
     - name: github-token
