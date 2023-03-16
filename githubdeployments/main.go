@@ -115,7 +115,7 @@ func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Co
 }
 
 func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build *cloudbuildpb.Build) error {
-	log.Infof("[DEBUG] build event: %+v", build)
+	log.Infof("[DEBUG] at SendNotification: build=%+v", build)
 
 	if !g.filter.Apply(ctx, build) {
 		log.V(2).Infof("not sending response for event (build id = %s, status = %v)", build.Id, build.Status)

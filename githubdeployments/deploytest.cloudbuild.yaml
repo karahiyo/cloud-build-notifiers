@@ -22,6 +22,6 @@ steps:
 
 tags: ['deployment']
 
-substitution:
+substitutions:
   _ENVIRONMENT: "test"
   _ENVIRONMENT_URL: "https://some.example.com"
