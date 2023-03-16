@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"strings"
 
@@ -43,7 +45,7 @@ const deploymentPayload = `{
     "ref": "{{.Build.Substitutions.RefName}}",
     "payload": "{}",
     "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
- 	"environment": "{{.Build.Environment}}",
+ 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
 }`
 
 const deploymentStatusPayload = `{
@@ -51,7 +53,7 @@ const deploymentStatusPayload = `{
     "target_url": "{{.Build.TargetUrl}}",
     "description": "{{.Build.Description}}",
 	"log_url": "{{.Build.LogUrl}}",
-	"environment_url": "{{.Build.EnvironmentUrl}}"
+	"environment_url": "{{.Build.Substitutions._ENVIRONMENT_URL}}"
 }`
 
 type githubdeploymentsInitMessage struct {
@@ -143,6 +145,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 
 	owner := triggerInfo.GetGithub().GetOwner()
 	repo := triggerInfo.GetGithub().GetName()
+	sha := build.Substitutions["COMMIT_SHA"]
 
 	var webhookURL string
 	var tmpl *template.Template
@@ -151,7 +154,11 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 		webhookURL = fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
 		tmpl = g.deploymentTmpl
 	} else {
-		webhookURL = fmt.Sprintf("%s/%s/%s/deployments/%s", githubApiEndpoint, owner, repo, "deployment-id-here")
+		deploymentId, err := g.getDeploymentId(ctx, owner, repo, sha)
+		if err != nil {
+			return fmt.Errorf("failed to get deployment_id: owner=%s, repo=%s, sha=%s", owner, repo, sha)
+		}
+		webhookURL = fmt.Sprintf("%s/%s/%s/deployments/%d", githubApiEndpoint, owner, repo, deploymentId)
 		tmpl = g.deploymentStatusTmpl
 	}
 
@@ -202,4 +209,53 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 
 	log.V(2).Infoln("send HTTP request successfully")
 	return nil
+}
+
+func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, repo, sha string) (int, error) {
+	webhookURL := fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, webhookURL, nil)
+	q := req.URL.Query()
+	q.Add("sha", sha)
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", g.githubToken))
+	req.Header.Set("User-Agent", "GCB-Notifier/0.1 (http)")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to make HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Warningf("got a non-OK response status %q (%d) from %q", resp.Status, resp.StatusCode, webhookURL)
+		return 0, errors.New(fmt.Sprintf("failed to call list deployments api: response status=%q, url=%q", resp.Status, webhookURL))
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	log.Infof("matched deployments: %+v", respBody)
+
+	type Deployment struct {
+		Url string `json:"url"`
+		ID  int    `json:"id"`
+	}
+
+	var deployments []Deployment
+	if err := json.Unmarshal(respBody, &deployments); err != nil {
+		return 0, fmt.Errorf("failed to unmarshall response body: %w", err)
+	}
+
+	var deploymentID int
+	for _, d := range deployments {
+		if deploymentID <= d.ID {
+			deploymentID = d.ID
+		}
+	}
+
+	return deploymentID, nil
 }

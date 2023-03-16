@@ -49,6 +49,6 @@ options:
   dynamic_substitutions: true
 
 substitutions:
-  _REGION: us-west1
+  _REGION: us-west1 # default value
   _REGISTRY: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-build-notifiers"
-  _CLOUD_RUN_ADDITIONAL_OPTS: ""
+  _CLOUD_RUN_ADDITIONAL_OPTS: "" # default value
