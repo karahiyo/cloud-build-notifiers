@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"strings"
 	"text/template"
 
@@ -116,7 +117,7 @@ func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Co
 }
 
 func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build *cloudbuildpb.Build) error {
-	log.Infof("[DEBUG] at SendNotification: build=%+v", build)
+	log.V(1).Infof("[DEBUG] at SendNotification: build=%+v", build)
 
 	if !g.filter.Apply(ctx, build) {
 		log.V(2).Infof("not sending response for event (build id = %s, status = %v)", build.Id, build.Status)
@@ -205,6 +206,12 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	if resp.StatusCode != http.StatusOK {
 		log.Warningf("got a non-OK response status %q (%d) from %q", resp.Status, resp.StatusCode, webhookURL)
 	}
+
+	b, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return fmt.Errorf("failed to dump http response")
+	}
+	log.V(1).Infof("github api response: %q", string(b))
 
 	log.V(2).Infoln("send HTTP request successfully")
 	return nil
