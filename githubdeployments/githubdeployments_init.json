@@ -1,6 +1,0 @@
-{
-    "ref": "{{.Build.RefName}}",
-    "environment": "{{.Build.Environment}}",
-    "payload": "{}",
-    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
-}

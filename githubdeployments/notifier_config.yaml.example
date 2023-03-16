@@ -29,13 +29,10 @@ spec:
         Build.Status.CANCELLED, 
         Build.Status.EXPIRED
       ]
-    template:
-      type: golang
-      uri: gs://project-name/githubdeployments/init.json
     delivery:
       githubToken:
         secretRef: github-token
 
   secrets:
     - name: github-token
-      value: projects/example-project/secrets/example-github-token/versions/latest
+      value: projects/PROJECT_ID/secrets/SECRET_NAME/versions/latest
