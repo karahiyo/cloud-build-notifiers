@@ -43,14 +43,16 @@ type githubdeploymentsNotifier struct {
 const deploymentPayload = `{
     "ref": "{{.Build.Substitutions.RefName}}",
     "payload": "{}",
+	"task": "",
     "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
  	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
 }`
 
 const deploymentStatusPayload = `{
     "state": "{{.Params.Status}}",
-    "description": "{{.Build.Description}}",
+    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
 	"log_url": "{{.Build.LogUrl}}",
+ 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
 	"environment_url": "{{.Build.Substitutions._ENVIRONMENT_URL}}"
 }`
 
