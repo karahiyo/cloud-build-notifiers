@@ -16,4 +16,4 @@ RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -
 
 FROM gcr.io/distroless/base
 COPY --from=build-env /go-app /
-ENTRYPOINT ["/go-app", "--alsologtostderr", "--v=2"]
+ENTRYPOINT ["/go-app", "--alsologtostderr", "--v=1"]

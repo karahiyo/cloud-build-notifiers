@@ -35,11 +35,12 @@ type githubdeploymentsNotifier struct {
 }
 
 type createDeploymentMessage struct {
-	Environment string `json:"environment"`
-	Ref         string `json:"ref"`
-	Description string `json:"description"`
-	Payload     string `json:"payload"`
-	Task        string `json:"task"`
+	Environment      string   `json:"environment"`
+	Ref              string   `json:"ref"`
+	Description      string   `json:"description"`
+	Payload          string   `json:"payload"`
+	Task             string   `json:"task"`
+	RequiredContexts []string `json:"required_contexts"`
 }
 
 type createDeploymentStatusMessage struct {
@@ -116,10 +117,11 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	if build.Status == cloudbuildpb.Build_QUEUED {
 		webhookURL = fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
 		msg := createDeploymentMessage{
-			Environment: build.Substitutions["_ENVIRONMENT"],
-			Ref:         build.Substitutions["REF_NAME"],
-			Description: fmt.Sprintf("Cloud Build (%s) %s status: %s, trigger_id: %s", build.ProjectId, build.Id, build.Status, build.BuildTriggerId),
-			Payload:     "",
+			Environment:      build.Substitutions["_ENVIRONMENT"],
+			Ref:              build.Substitutions["REF_NAME"],
+			Description:      fmt.Sprintf("Cloud Build (%s) %s status: %s, trigger_id: %s", build.ProjectId, build.Id, build.Status, build.BuildTriggerId),
+			Payload:          "",
+			RequiredContexts: []string{}, // Pass an empty array to avoid 409 HTTP errors due to commit status checks. see https://docs.github.com/ja/rest/deployments/deployments?apiVersion=2022-11-28#failed-commit-status-checks
 		}
 		payload, err = json.Marshal(msg)
 		if err != nil {
@@ -168,14 +170,13 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Warningf("got a non-OK response status %q (%d) from %q", resp.Status, resp.StatusCode, webhookURL)
+		b, err := httputil.DumpResponse(resp, true)
+		if err != nil {
+			return fmt.Errorf("failed to dump http response")
+		}
+		log.Warningf("got a non-OK response status %q (%d) from %q. response = %q", resp.Status, resp.StatusCode, webhookURL, string(b))
+		return fmt.Errorf("failed to api request: %q", string(b))
 	}
-
-	b, err := httputil.DumpResponse(resp, true)
-	if err != nil {
-		return fmt.Errorf("failed to dump http response")
-	}
-	log.V(1).Infof("github api response: %q", string(b))
 
 	log.V(2).Infoln("send HTTP request successfully")
 	return nil
