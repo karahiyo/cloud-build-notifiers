@@ -239,7 +239,7 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 		return 0, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	log.Infof("matched deployments: %+v", respBody)
+	log.Infof("matched deployments: %+v", string(respBody))
 
 	type Deployment struct {
 		Url string `json:"url"`
