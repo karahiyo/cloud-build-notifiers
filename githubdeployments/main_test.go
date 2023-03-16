@@ -1,20 +1,15 @@
 package main
 
 import (
-	"bytes"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
-	"text/template"
 
-	"github.com/GoogleCloudPlatform/cloud-build-notifiers/lib/notifiers"
 	cbpb "google.golang.org/genproto/googleapis/devtools/cloudbuild/v1"
 )
 
-func TestCreateDeploymentsTemplate(t *testing.T) {
-	tmpl, err := template.New("create_deployments_template").Parse(deploymentPayload)
-	if err != nil {
-		t.Fatalf("template.Parse failed: %v", err)
-	}
+func TestCreateDeploymentsPayload(t *testing.T) {
 	build := &cbpb.Build{
 		ProjectId: "my-project-id",
 		Id:        "some-build-id",
@@ -26,20 +21,18 @@ func TestCreateDeploymentsTemplate(t *testing.T) {
 			"_ENVIRONMENT_URL": "https://some-service.example.com",
 		},
 	}
-
-	view := &notifiers.TemplateView{
-		Build: &notifiers.BuildView{
-			Build: build,
-		},
-		Params: map[string]string{"buildStatus": "SUCCESS"},
+	msg := createDeploymentMessage{
+		Environment: build.Substitutions["_ENVIRONMENT"],
+		Ref:         build.Substitutions["REF_NAME"],
+		Description: fmt.Sprintf("Cloud Build (%s) %s status: %s, trigger_id: %s", build.ProjectId, build.Id, build.Status, build.BuildTriggerId),
+		Payload:     "",
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("failed to json marshal: %v", err)
 	}
 
-	body := new(bytes.Buffer)
-	if err := tmpl.Execute(body, view); err != nil {
-		t.Fatalf("failed to execute template: %v", err)
-	}
-
-	if !strings.Contains(body.String(), `SUCCESS`) {
+	if !strings.Contains(string(payload), `Cloud Build`) {
 		t.Error("missing status")
 	}
 }

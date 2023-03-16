@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
-	"text/template"
 
 	cloudbuild "cloud.google.com/go/cloudbuild/apiv1"
 	"cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
@@ -30,34 +28,13 @@ func main() {
 }
 
 type githubdeploymentsNotifier struct {
-	filter               notifiers.EventFilter
-	githubToken          string
-	deploymentTmpl       *template.Template
-	deploymentStatusTmpl *template.Template
-
-	br       notifiers.BindingResolver
-	tmplView *notifiers.TemplateView
-
+	filter           notifiers.EventFilter
+	githubToken      string
+	bindingResolver  notifiers.BindingResolver
 	cloudbuildClient *cloudbuild.Client
 }
 
-const deploymentPayload = `{
- 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
-    "ref": "{{.Build.Substitutions.RefName}}",
-    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
-    "payload": "{}",
-	"task": "",
-}`
-
-const deploymentStatusPayload = `{
- 	"environment": "{{.Build.Substitutions._ENVIRONMENT}}",
-    "state": "{{.Params.Status}}",
-    "description": "Cloud Build {{.Build.ProjectId}} {{.Build.Id}} status: **{{.Build.Status}}**\n\n{{if .Build.BuildTriggerId}}Trigger ID: {{.Build.BuildTriggerId}}{{end}}\n\n[View Logs]({{.Build.LogUrl}})"
-	"log_url": "{{.Build.LogUrl}}",
-	"environment_url": "{{.Build.Substitutions._ENVIRONMENT_URL}}"
-}`
-
-type githubdeploymentsInitMessage struct {
+type createDeploymentMessage struct {
 	Environment string `json:"environment"`
 	Ref         string `json:"ref"`
 	Description string `json:"description"`
@@ -65,7 +42,7 @@ type githubdeploymentsInitMessage struct {
 	Task        string `json:"task"`
 }
 
-type githubdeploymentsUpdateMessage struct {
+type createDeploymentStatusMessage struct {
 	Environment    string `json:"environment"`
 	State          string `json:"state"`
 	Description    string `json:"description"`
@@ -79,25 +56,13 @@ func (g *githubdeploymentsNotifier) SetUp(ctx context.Context, cfg *notifiers.Co
 		return fmt.Errorf("failed to make a CEL predicate: %w", err)
 	}
 	g.filter = prd
-	g.br = br
+	g.bindingResolver = br
 
 	cloudbuildClient, err := cloudbuild.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Cloud Build client: %w", err)
 	}
 	g.cloudbuildClient = cloudbuildClient
-
-	deploymentTmpl, err := template.New("deployment_template").Parse(deploymentPayload)
-	if err != nil {
-		return fmt.Errorf("failed to parse deployment body template: %w", err)
-	}
-	g.deploymentTmpl = deploymentTmpl
-
-	deploymentStatusTmpl, err := template.New("deployment_status_template").Parse(deploymentStatusPayload)
-	if err != nil {
-		return fmt.Errorf("failed to parse deployment body template: %w", err)
-	}
-	g.deploymentStatusTmpl = deploymentStatusTmpl
 
 	wuRef, err := notifiers.GetSecretRef(cfg.Spec.Notification.Delivery, githubTokenSecretName)
 	if err != nil {
@@ -145,50 +110,49 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	sha := build.Substitutions["COMMIT_SHA"]
 
 	var webhookURL string
-	var tmpl *template.Template
-	deploymentStatus := toGitHubDeploymentStatus(build.Status)
+	var payload []byte
 
+	// If the build status is QUEUED, create a new Deployment resource, otherwise create a Deployment Status resource.
 	if build.Status == cloudbuildpb.Build_QUEUED {
 		webhookURL = fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
-		tmpl = g.deploymentTmpl
+		msg := createDeploymentMessage{
+			Environment: build.Substitutions["_ENVIRONMENT"],
+			Ref:         build.Substitutions["REF_NAME"],
+			Description: fmt.Sprintf("Cloud Build (%s) %s status: %s, trigger_id: %s", build.ProjectId, build.Id, build.Status, build.BuildTriggerId),
+			Payload:     "",
+		}
+		payload, err = json.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("failed to build payload: %w", err)
+		}
 	} else {
-		deploymentId, err := g.getDeploymentId(ctx, owner, repo, sha)
+		deploymentId, err := g.getDeploymentId(ctx, owner, repo, sha, build.Substitutions["_ENVIRONMENT"])
 		if err != nil {
 			return fmt.Errorf("failed to get deployment_id: owner=%s, repo=%s, sha=%s", owner, repo, sha)
 		}
 		webhookURL = fmt.Sprintf("%s/%s/%s/deployments/%d", githubApiEndpoint, owner, repo, deploymentId)
-		tmpl = g.deploymentStatusTmpl
+		msg := createDeploymentStatusMessage{
+			Environment:    build.Substitutions["_ENVIRONMENT"],
+			State:          toGitHubDeploymentStatus(build.Status),
+			Description:    fmt.Sprintf("Cloud Build (%s) %s status: %s, trigger_id: %s", build.ProjectId, build.Id, build.Status, build.BuildTriggerId),
+			LogUrl:         build.LogUrl,
+			EnvironmentUrl: build.Substitutions["_ENVIRONMENT_URL"],
+		}
+		payload, err = json.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("failed to build payload: %w", err)
+		}
 	}
 
 	log.Infof("sending GitHub Deployment webhook for Build %q (status: %q) to url %q", build.Id, build.Status, webhookURL)
 
-	bindings, err := g.br.Resolve(ctx, nil, build)
-	if err != nil {
-		log.Errorf("failed to resolve bindings: %v", err)
-	}
-	bindings["State"] = deploymentStatus
-
-	g.tmplView = &notifiers.TemplateView{
-		Build:  &notifiers.BuildView{Build: build},
-		Params: bindings,
-	}
 	logURL, err := notifiers.AddUTMParams(build.LogUrl, notifiers.HTTPMedium)
 	if err != nil {
 		return fmt.Errorf("failed to add UTM params: %w", err)
 	}
 	build.LogUrl = logURL
 
-	payload := new(bytes.Buffer)
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, g.tmplView); err != nil {
-		return err
-	}
-	err = json.NewEncoder(payload).Encode(buf)
-	if err != nil {
-		return fmt.Errorf("failed to encode payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, strings.NewReader(buf.String()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, strings.NewReader(string(payload)))
 	if err != nil {
 		return fmt.Errorf("failed to create a new HTTP request: %w", err)
 	}
@@ -217,7 +181,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	return nil
 }
 
-func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, repo, sha string) (int, error) {
+func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, repo, sha, environment string) (int, error) {
 	webhookURL := fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, webhookURL, nil)
 	if err != nil {
@@ -225,6 +189,7 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 	}
 	q := req.URL.Query()
 	q.Add("sha", sha)
+	q.Add("environment", environment)
 	req.URL.RawQuery = q.Encode()
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
@@ -250,8 +215,7 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 	log.Infof("matched deployments: %+v", string(respBody))
 
 	type Deployment struct {
-		Url string `json:"url"`
-		ID  int    `json:"id"`
+		ID int `json:"id"`
 	}
 
 	var deployments []Deployment
@@ -260,12 +224,12 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 	}
 
 	if len(deployments) == 0 {
-		return 0, fmt.Errorf("deployment not found: repo=%s/%s, sha=%s", owner, repo, sha)
+		return 0, fmt.Errorf("deployment not found: repo=%s/%s, sha=%s, environment=%s", owner, repo, sha, environment)
 	}
 
 	var deploymentID int
 	for _, d := range deployments {
-		if deploymentID <= d.ID {
+		if deploymentID < d.ID {
 			deploymentID = d.ID
 		}
 	}
