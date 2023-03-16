@@ -251,6 +251,10 @@ func (g *githubdeploymentsNotifier) getDeploymentId(ctx context.Context, owner, 
 		return 0, fmt.Errorf("failed to unmarshall response body: %w", err)
 	}
 
+	if len(deployments) == 0 {
+		return 0, fmt.Errorf("deployment not found: repo=%s/%s, sha=%s", owner, repo, sha)
+	}
+
 	var deploymentID int
 	for _, d := range deployments {
 		if deploymentID <= d.ID {
