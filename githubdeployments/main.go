@@ -127,11 +127,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 		return nil
 	}
 
-	getTriggerReq := &cloudbuildpb.GetBuildTriggerRequest{
-		ProjectId: build.GetProjectId(),
-		TriggerId: build.GetBuildTriggerId(),
-	}
-	log.Infof("[DEBUG] GetBuildTriggerRequest: %+v", getTriggerReq)
+	getTriggerReq := &cloudbuildpb.GetBuildTriggerRequest{ProjectId: build.GetProjectId(), TriggerId: build.GetBuildTriggerId()}
 	triggerInfo, err := g.cloudbuildClient.GetBuildTrigger(ctx, getTriggerReq)
 	if err != nil {
 		return fmt.Errorf("failed to get Build Trigger info: %w", err)
@@ -150,7 +146,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 	var tmpl *template.Template
 	deploymentStatus := toGitHubDeploymentStatus(build.Status)
 
-	if build.Status == cloudbuildpb.Build_PENDING {
+	if build.Status == cloudbuildpb.Build_QUEUED {
 		webhookURL = fmt.Sprintf("%s/%s/%s/deployments", githubApiEndpoint, owner, repo)
 		tmpl = g.deploymentTmpl
 	} else {
