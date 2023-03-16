@@ -39,6 +39,7 @@ steps:
     - --image=${_REGISTRY}/githubdeployments
     - --no-allow-unauthenticated
     - --update-env-vars=CONFIG_PATH=${_CONFIG_PATH}
+    - ${_CLOUD_RUN_ADDITIONAL_OPTS} # --service-account=SERVICE_ACCOUNT
 
 # Push the image with tags.
 images:
@@ -50,3 +51,4 @@ options:
 substitutions:
   _REGION: us-west1
   _REGISTRY: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-build-notifiers"
+  _CLOUD_RUN_ADDITIONAL_OPTS: ""
