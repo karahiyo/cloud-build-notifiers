@@ -28,8 +28,6 @@ cloud.google.com/go/bigquery v1.5.0/go.mod h1:snEHRnqQbz117VIFhE8bmtwIDY80NLUZUM
 cloud.google.com/go/bigquery v1.7.0/go.mod h1://okPTzCYNXSlb24MZs83e2Do+h+VXtc4gLoIoXIAPc=
 cloud.google.com/go/bigquery v1.8.0/go.mod h1:J5hqkt3O0uAFnINi6JXValWIb1v0goeZM77hZzJN/fQ=
 cloud.google.com/go/bigquery v1.16.0/go.mod h1:EMXkSbFZ4jSt3X49n+sq9WRNNKy3hM0hOz1MrLO1vR4=
-cloud.google.com/go/cloudbuild v1.7.0 h1:osBOHQJqLPqNfHfkRQXz6sCKAIEKRrupA9NaAGiLN4s=
-cloud.google.com/go/cloudbuild v1.7.0/go.mod h1:zb5tWh2XI6lR9zQmsm1VRA+7OCuve5d8S+zJUul8KTg=
 cloud.google.com/go/cloudbuild v1.8.0 h1:2W4p/Bcb/nb8Xx5319rRfW2fRRClpKtCn1O0HnMs+mk=
 cloud.google.com/go/cloudbuild v1.8.0/go.mod h1:jb/6jqmy/YosiL1hkO6iMWjPv2uNzlUmX+SGxheBfXc=
 cloud.google.com/go/compute v1.18.0 h1:FEigFqoDbys2cvFkZ9Fjq4gnHBP55anJ0yQyau2f9oY=
@@ -656,8 +654,6 @@ google.golang.org/api v0.36.0/go.mod h1:+z5ficQTmoYpPn8LCUNVpK5I7hwkpjbcgqA7I34q
 google.golang.org/api v0.40.0/go.mod h1:fYKFpnQN0DsDSKRVRcQSDQNtqWPfM9i+zNPxepjRCQ8=
 google.golang.org/api v0.41.0/go.mod h1:RkxM5lITDfTzmyKFPt+wGrCJbVfniCr2ool8kTBzRTU=
 google.golang.org/api v0.43.0/go.mod h1:nQsDGjRXMo4lvh5hP0TKqF244gqhGcr/YSIykhUk/94=
-google.golang.org/api v0.110.0 h1:l+rh0KYUooe9JGbGVx71tbFo4SMbMTXK3I3ia2QSEeU=
-google.golang.org/api v0.110.0/go.mod h1:7FC4Vvx1Mooxh8C5HWjzZHcavuS2f6pmJpZx60ca7iI=
 google.golang.org/api v0.111.0 h1:bwKi+z2BsdwYFRKrqwutM+axAlYLz83gt5pDSXCJT+0=
 google.golang.org/api v0.111.0/go.mod h1:qtFHvU9mhgTJegR31csQ+rwxyUTHOKFqCKWp1J0fdw0=
 google.golang.org/appengine v1.1.0/go.mod h1:EbEs0AVv82hx2wNQdGPgUI5lhzA/G0D9YwlJXL52JkM=
