@@ -130,7 +130,7 @@ func (g *githubdeploymentsNotifier) SendNotification(ctx context.Context, build 
 		if err != nil {
 			return fmt.Errorf("failed to get deployment_id: owner=%s, repo=%s, sha=%s", owner, repo, sha)
 		}
-		webhookURL = fmt.Sprintf("%s/%s/%s/deployments/%d", githubApiEndpoint, owner, repo, deploymentId)
+		webhookURL = fmt.Sprintf("%s/%s/%s/deployments/%d/statuses", githubApiEndpoint, owner, repo, deploymentId)
 		msg := createDeploymentStatusMessage{
 			Environment:    build.Substitutions["_ENVIRONMENT"],
 			State:          toGitHubDeploymentStatus(build.Status),
